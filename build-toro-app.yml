@@ -1,0 +1,67 @@
+name: Build Toro Tracker APP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ToroTrackerBuild.zip'
+      - '.github/workflows/build-toro-app.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack Toro Tracker
+        run: |
+          rm -rf buildsrc
+          mkdir buildsrc
+          unzip -q ToroTrackerBuild.zip -d buildsrc
+
+      - name: Build unsigned iPhone app
+        run: |
+          xcodebuild \
+            -project buildsrc/ToroTracker.xcodeproj \
+            -target ToroTracker \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$GITHUB_WORKSPACE/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Create CTL-style .app package
+        run: |
+          APP="$GITHUB_WORKSPACE/DerivedData/Build/Products/Release-iphoneos/ToroTracker.app"
+          test -d "$APP"
+
+          rm -rf "$GITHUB_WORKSPACE/output"
+          mkdir -p "$GITHUB_WORKSPACE/output"
+
+          cp -R "$APP" "$GITHUB_WORKSPACE/output/com.torodumpsters.ToroTracker.app"
+
+          cd "$GITHUB_WORKSPACE/output"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent             com.torodumpsters.ToroTracker.app             ToroTracker-Application.zip
+
+      - name: Also create LiveContainer IPA
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R DerivedData/Build/Products/Release-iphoneos/ToroTracker.app Payload/ToroTracker.app
+          zip -qry output/ToroTracker.ipa Payload
+
+      - name: Upload Toro Tracker files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToroTracker-Build
+          path: |
+            output/ToroTracker-Application.zip
+            output/ToroTracker.ipa
+          if-no-files-found: error
